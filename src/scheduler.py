@@ -37,6 +37,9 @@ class Resource:
     ):
         self.start_date = start_date
 
+    def __lt__(self, other):
+        return self.start_date < other.start_date
+
 
 class Rig(Resource):
     pass
@@ -57,6 +60,7 @@ class WellBatch:
         self.drill_duration = sum((well.drill_duration for well in wells))
         self.frac_duration = sum((well.frac_duration for well in wells))
         self.release_date = None
+        self.priority = priority
         for well in wells:
             if not well.release_date:
                 continue
@@ -64,6 +68,14 @@ class WellBatch:
                 self.release_date = well.release_date
             else:
                 self.release_date = min(self.release_date, well.release_date)
+        if not priority:
+            for well in wells:
+                if not well.priority:
+                    continue
+                if not self.priority:
+                    self.priority = well.priority
+                else:
+                    self.priority = min(self.priority, well.priority)
 
         # Status variables
         self.is_drilled = False
@@ -89,6 +101,15 @@ class WellBatch:
         self.frac_start = frac_start
         self.frac_end = frac_start + timedelta(days=self.frac_duration)
 
+    def __lt__(self, other):
+        if self.priority and other.priority:
+            return self.priority < other.priority
+        if self.priority and not other.priority:
+            return True
+        if not self.priority and other.priority:
+            return False
+        return True
+
 
 class ScheduleEvent:
     def __init__(
@@ -96,17 +117,20 @@ class ScheduleEvent:
         resource: Resource,
         well_batch: WellBatch,
         event_start: datetime,
-        event_end: datetime,
         event_duration: int,
+        event_end: datetime = None,
     ):
         self.resource = resource
         self.well_batch = well_batch
         self.event_start = event_start
-        self.event_end = event_end
         self.event_duration = event_duration
+        if event_end:
+            self.event_end = event_end
+        else:
+            self.event_end = event_start + timedelta(event_duration)
 
     def __repr__(self):
-        return f"({self.resource.name}, {self.well_batch.name}, {self.event_start.strftime()})"
+        return f"({self.resource.name}, {self.well_batch.name}, {self.event_start.strftime('%Y-%m-%d')})"
 
 
 class Scheduler:
