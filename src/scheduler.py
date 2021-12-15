@@ -60,6 +60,7 @@ class WellBatch:
         self.drill_duration = sum((well.drill_duration for well in wells))
         self.frac_duration = sum((well.frac_duration for well in wells))
         self.release_date = None
+        self.due_date = None
         self.priority = priority
         for well in wells:
             if not well.release_date:
@@ -68,6 +69,13 @@ class WellBatch:
                 self.release_date = well.release_date
             else:
                 self.release_date = min(self.release_date, well.release_date)
+        for well in wells:
+            if not well.due_date:
+                continue
+            if not self.due_date:
+                self.due_date = well.due_date
+            else:
+                self.due_date = max(self.due_date, well.due_date)
         if not priority:
             for well in wells:
                 if not well.priority:
@@ -157,7 +165,7 @@ class Scheduler:
         self.production_lag = prod_lag_days
 
     def schedule(self):
-        self.well_batches.sort(key=lambda x: x.priority)
+        self.well_batches.sort()
         self.rigs.sort(key=lambda x: x.start_date)
         self.frac_crews.sort(key=lambda x: x.start_date)
 
@@ -169,7 +177,9 @@ class Scheduler:
                     else:
                         drill_start = rig.start_date
                     drill_end = drill_start + timedelta(well_batch.drill_duration)
-                    print(f"{rig.name} assigned to {well_batch.name}")
+                    print(
+                        f"{rig.name} assigned to {well_batch.name} start {drill_start} end {drill_end}"
+                    )
                     rig.set_resource_availability(drill_end)
                     well_batch.set_drill_status(drill_start)
                     self.schedule_events.append(
@@ -190,10 +200,13 @@ class Scheduler:
             for frac_crew in self.frac_crews:
                 if self._is_valid(frac_crew, well_batch):
                     frac_start = max(
-                        frac_crew.start_date, well_batch.drill_end + self.frac_lag
+                        frac_crew.start_date,
+                        well_batch.drill_end + timedelta(self.frac_lag),
                     )
-                    frac_end = frac_start + well_batch.frac_duration
-                    print(f"{frac_crew.name} assigned to {well_batch.name}")
+                    frac_end = frac_start + timedelta(well_batch.frac_duration)
+                    print(
+                        f"{frac_crew.name} assigned to {well_batch.name} start {frac_start} end {frac_end}"
+                    )
                     frac_crew.set_resource_availability(frac_end)
                     well_batch.set_frac_status(frac_start)
                     self.schedule_events.append(
@@ -216,14 +229,23 @@ class Scheduler:
         return self.schedule_events
 
     def _is_valid(self, resource: Resource, well_batch: WellBatch):
-        start_date = max(resource.start_date, well_batch.release_date)
+        if well_batch.release_date:
+            start_date = max(resource.start_date, well_batch.release_date)
+        else:
+            start_date = resource.start_date
         if isinstance(resource, Rig):
-            end_date = start_date + well_batch.drill_duration
+            end_date = start_date + timedelta(days=well_batch.drill_duration)
         elif isinstance(resource, FracCrew):
-            end_date = start_date + well_batch.frac_duration
+            if not self.frac_lag:
+                raise Exception("Set frac lag using set_grac_lag() before scheduling")
+            end_date = start_date + timedelta(days=well_batch.frac_duration)
         else:
             raise Exception("Resource is neither rig or frac crew")
-
-        if end_date > resource.end_date or end_date > well_batch.due_date:
+        if not resource.end_date and not well_batch.due_date:
+            return True
+        if resource.end_date and end_date > resource.end_date:
             return False
+        if well_batch.due_date and end_date > well_batch.due_date:
+            return False
+
         return True

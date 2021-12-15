@@ -116,4 +116,5 @@ def test_scheduler_schedule():
     ]
 
     scheduler = Scheduler(rigs, crews, well_batches)
+    scheduler.set_frac_lag(20)
     scheduler.schedule()
