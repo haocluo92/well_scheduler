@@ -116,6 +116,14 @@ class WellBatch:
             return True
         if not self.priority and other.priority:
             return False
+        # Without priority, sort by release date
+        if self.release_date and other.release_date:
+            return self.release_date < other.release_date
+        if self.release_date and not other.release_date:
+            return True
+        if not self.release_date and other.release_date:
+            return False
+        # Without release date, return the first one
         return True
 
 
@@ -180,7 +188,7 @@ class Scheduler:
                     print(
                         f"{rig.name} assigned to {well_batch.name} start {drill_start} end {drill_end}"
                     )
-                    rig.set_resource_availability(drill_end)
+                    rig.set_resource_availability(drill_end + timedelta(days=1))
                     well_batch.set_drill_status(drill_start)
                     self.schedule_events.append(
                         ScheduleEvent(
@@ -196,7 +204,11 @@ class Scheduler:
 
         for well_batch in self.well_batches:
             if not well_batch.is_drilled:
-                raise Exception("Cannot frac before drilling. Check logic")
+                print(
+                    f"{well_batch.name} cannot be scheduled due to timing constraints"
+                )
+                # raise Warning(f"{well_batch.name} cannot be scheduled")
+                # raise Exception("Cannot frac before drilling. Check logic")
             for frac_crew in self.frac_crews:
                 if self._is_valid(frac_crew, well_batch):
                     frac_start = max(
@@ -207,7 +219,7 @@ class Scheduler:
                     print(
                         f"{frac_crew.name} assigned to {well_batch.name} start {frac_start} end {frac_end}"
                     )
-                    frac_crew.set_resource_availability(frac_end)
+                    frac_crew.set_resource_availability(frac_end + timedelta(days=1))
                     well_batch.set_frac_status(frac_start)
                     self.schedule_events.append(
                         ScheduleEvent(

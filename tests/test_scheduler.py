@@ -118,3 +118,74 @@ def test_scheduler_schedule():
     scheduler = Scheduler(rigs, crews, well_batches)
     scheduler.set_frac_lag(20)
     scheduler.schedule()
+
+
+def test_scheduler_schedule_w_priority():
+    rigs = [
+        Rig(f"Rig {i}", start_date=datetime(2020, 1, 1), end_date=datetime(2030, 1, 1))
+        for i in range(1, 2)
+    ]
+    crews = [
+        FracCrew(
+            f"Crew {i}", start_date=datetime(2020, 1, 1), end_date=datetime(2030, 1, 1)
+        )
+        for i in range(1, 2)
+    ]
+    wells = [Well(f"Well {i}", 45, 15) for i in range(1, 6)]
+    well_batches = [
+        WellBatch(name="Pad 1", wells=wells[:3], priority=2),
+        WellBatch(name="Pad 2", wells=wells[3:], priority=1),
+    ]
+
+    scheduler = Scheduler(rigs, crews, well_batches)
+    scheduler.set_frac_lag(20)
+    scheduler.schedule()
+
+
+def test_scheduler_schedule_w_varying_rig_count():
+    rigs = [
+        Rig("Rig 1", start_date=datetime(2020, 1, 1), end_date=datetime(2020, 6, 1)),
+        Rig("Rig 2", start_date=datetime(2020, 3, 1), end_date=datetime(2020, 12, 1)),
+    ]
+    crews = [
+        FracCrew(
+            f"Crew {i}", start_date=datetime(2020, 1, 1), end_date=datetime(2030, 1, 1)
+        )
+        for i in range(1, 2)
+    ]
+    wells = [Well(f"Well {i}", 45, 15) for i in range(1, 9)]
+    well_batches = [
+        WellBatch(name="Pad 1", wells=wells[:3], priority=2),
+        WellBatch(name="Pad 2", wells=wells[3:6], priority=1),
+        WellBatch(name="Pad 3", wells=wells[6:], priority=3),
+    ]
+
+    scheduler = Scheduler(rigs, crews, well_batches)
+    scheduler.set_frac_lag(20)
+    scheduler.schedule()
+
+
+def test_scheduler_schedule_w_release_date():
+    rigs = [
+        Rig("Rig 1", start_date=datetime(2020, 1, 1), end_date=datetime(2020, 12, 1)),
+        Rig("Rig 2", start_date=datetime(2020, 3, 1), end_date=datetime(2021, 6, 1)),
+    ]
+    crews = [
+        FracCrew(
+            f"Crew {i}", start_date=datetime(2020, 1, 1), end_date=datetime(2030, 1, 1)
+        )
+        for i in range(1, 2)
+    ]
+    wells = [
+        Well(f"Well {i}", 45, 15, release_date=datetime(2020, i, 1))
+        for i in range(1, 9)
+    ]
+    well_batches = [
+        WellBatch(name="Pad 1", wells=wells[3:6]),
+        WellBatch(name="Pad 2", wells=wells[:3]),
+        WellBatch(name="Pad 3", wells=wells[6:]),
+    ]
+
+    scheduler = Scheduler(rigs, crews, well_batches)
+    scheduler.set_frac_lag(20)
+    scheduler.schedule()
