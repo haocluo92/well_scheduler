@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List, Dict
+from math import radians, cos, sin, asin, sqrt
 
 
 class Well:
@@ -8,7 +9,8 @@ class Well:
         well_name: str,
         drill_duration: int,
         frac_duration: int,
-        release_date: datetime = None,
+        date_allow_to_drill: datetime = None,
+        date_allow_to_frac: datetime = None,
         due_date: datetime = None,
         lat: float = None,
         lon: float = None,
@@ -17,7 +19,8 @@ class Well:
         self.well_name = well_name
         self.drill_duration = drill_duration
         self.frac_duration = frac_duration
-        self.release_date = release_date
+        self.date_allow_to_drill = date_allow_to_drill
+        self.date_allow_to_frac = date_allow_to_frac
         self.due_date = due_date
         self.lat = lat
         self.lon = lon
@@ -59,16 +62,19 @@ class WellBatch:
         self.wells = wells
         self.drill_duration = sum((well.drill_duration for well in wells))
         self.frac_duration = sum((well.frac_duration for well in wells))
-        self.release_date = None
+        self.date_allow_to_drill = None
+        self.date_allow_to_frac = None
         self.due_date = None
         self.priority = priority
         for well in wells:
-            if not well.release_date:
+            if not well.date_allow_to_drill:
                 continue
-            if not self.release_date:
-                self.release_date = well.release_date
+            if not self.date_allow_to_drill:
+                self.date_allow_to_drill = well.date_allow_to_drill
             else:
-                self.release_date = min(self.release_date, well.release_date)
+                self.date_allow_to_drill = min(
+                    self.date_allow_to_drill, well.date_allow_to_drill
+                )
         for well in wells:
             if not well.due_date:
                 continue
@@ -117,11 +123,11 @@ class WellBatch:
         if not self.priority and other.priority:
             return False
         # Without priority, sort by release date
-        if self.release_date and other.release_date:
-            return self.release_date < other.release_date
-        if self.release_date and not other.release_date:
+        if self.date_allow_to_drill and other.date_allow_to_drill:
+            return self.date_allow_to_drill < other.date_allow_to_drill
+        if self.date_allow_to_drill and not other.date_allow_to_drill:
             return True
-        if not self.release_date and other.release_date:
+        if not self.date_allow_to_drill and other.date_allow_to_drill:
             return False
         # Without release date, return the first one
         return True
@@ -172,16 +178,21 @@ class Scheduler:
     def set_production_lag(self, prod_lag_days: int):
         self.production_lag = prod_lag_days
 
-    def schedule(self):
+    def schedule(self, simops: bool = False):
         self.well_batches.sort()
         self.rigs.sort(key=lambda x: x.start_date)
         self.frac_crews.sort(key=lambda x: x.start_date)
 
+        if simops:
+            self.simops_pairs = self._generate_simops_pairs()
+
         for well_batch in self.well_batches:
             for rig in self.rigs:
-                if self._is_valid(rig, well_batch):
-                    if well_batch.release_date:
-                        drill_start = max(rig.start_date, well_batch.release_date)
+                if self._is_valid_assignment(rig, well_batch):
+                    if well_batch.date_allow_to_drill:
+                        drill_start = max(
+                            rig.start_date, well_batch.date_allow_to_drill
+                        )
                     else:
                         drill_start = rig.start_date
                     drill_end = drill_start + timedelta(well_batch.drill_duration)
@@ -210,7 +221,7 @@ class Scheduler:
                 # raise Warning(f"{well_batch.name} cannot be scheduled")
                 # raise Exception("Cannot frac before drilling. Check logic")
             for frac_crew in self.frac_crews:
-                if self._is_valid(frac_crew, well_batch):
+                if self._is_valid_assignment(frac_crew, well_batch):
                     frac_start = max(
                         frac_crew.start_date,
                         well_batch.drill_end + timedelta(self.frac_lag),
@@ -240,9 +251,9 @@ class Scheduler:
             )
         return self.schedule_events
 
-    def _is_valid(self, resource: Resource, well_batch: WellBatch):
-        if well_batch.release_date:
-            start_date = max(resource.start_date, well_batch.release_date)
+    def _is_valid_assignment(self, resource: Resource, well_batch: WellBatch):
+        if well_batch.date_allow_to_drill:
+            start_date = max(resource.start_date, well_batch.date_allow_to_drill)
         else:
             start_date = resource.start_date
         if isinstance(resource, Rig):
@@ -261,3 +272,38 @@ class Scheduler:
             return False
 
         return True
+
+    def _generate_simops_pairs(self, threshold=3000):
+        simops_pairs = []
+        for i in range(len(self.well_batches)):
+            for j in range(i + 1, len(self.well_batches)):
+                for well in self.well_batches[i]:
+                    is_simops_pair = False
+                    for other_well in self.well_batches[j]:
+                        dist = self._haversine_dist(
+                            well.lon, well.lat, other_well.lon, other_well.lat
+                        )
+                        if dist < threshold:
+                            simops_pairs.append((well, other_well))
+                            is_simops_pair = True
+                            break
+                    if is_simops_pair:
+                        break
+
+        return simops_pairs
+
+    def _haversine_dist(self, lon1, lat1, lon2, lat2):
+        """
+        Calculate the great circle distance in kilometers between two points
+        on the earth (specified in decimal degrees)
+        """
+        # convert decimal degrees to radians
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+        # haversine formula
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+        c = 2 * asin(sqrt(a))
+        r = 6371  # Radius of earth in kilometers. Use 3956 for miles. Determines return value units.
+        return c * r
